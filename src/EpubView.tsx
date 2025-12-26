@@ -1,4 +1,4 @@
-import { WorkspaceLeaf, FileView, TFile, Menu, moment } from "obsidian";
+import { WorkspaceLeaf, FileView, TFile, Menu, moment, Plugin } from "obsidian";
 import * as React from 'react';
 import * as ReactDOM from 'react-dom';
 import { EpubPluginSettings } from "./EpubPluginSettings";
@@ -11,7 +11,7 @@ export const ICON_EPUB = "doc-epub";
 export class EpubView extends FileView {
   allowNoFile: false;
 
-  constructor(leaf: WorkspaceLeaf, private settings: EpubPluginSettings) {
+  constructor(leaf: WorkspaceLeaf, private settings: EpubPluginSettings, private plugin: Plugin) {
     super(leaf);
   }
 
@@ -80,7 +80,10 @@ Date: ${moment().toLocaleString()}
         scrolled={this.settings.scrolledView}
         tocOffset={tocOffset}
         tocBottomOffset={tocBottomOffset}
-        leaf={this.leaf} />,
+        leaf={this.leaf}
+        settings={this.settings}
+        filePath={file.path}
+        plugin={this.plugin} />,
       this.contentEl
     );
   }

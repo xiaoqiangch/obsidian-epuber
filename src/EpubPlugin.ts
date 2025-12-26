@@ -17,7 +17,7 @@ export default class EpubPlugin extends Plugin {
 		`);
 
 		this.registerView(VIEW_TYPE_EPUB, (leaf: WorkspaceLeaf) => {
-			return new EpubView(leaf, this.settings);
+			return new EpubView(leaf, this.settings, this);
 		});
 
 		try {
