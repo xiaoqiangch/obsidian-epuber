@@ -314,6 +314,26 @@ export const EpubReader = ({
             handleTextSelected={handleTextSelected}
             handleKeyPress={undefined}
             getRendition={(rendition: Rendition) => {
+              // Proxy next/prev to check for focus
+              const originalNext = rendition.next.bind(rendition);
+              const originalPrev = rendition.prev.bind(rendition);
+              
+              rendition.next = () => {
+                const isFocused = leaf.view.containerEl.contains(document.activeElement);
+                if (isFocused) {
+                  return originalNext();
+                }
+                return Promise.resolve(null as any);
+              };
+              
+              rendition.prev = () => {
+                const isFocused = leaf.view.containerEl.contains(document.activeElement);
+                if (isFocused) {
+                  return originalPrev();
+                }
+                return Promise.resolve(null as any);
+              };
+
               renditionRef.current = rendition;
               
               // Handle keyboard events from within the iframe
