@@ -117,13 +117,13 @@ export const EpubReader = ({
     }
   }, [isContinuousHighlightMode, filePath]);
 
-  const handleHighlight = useCallback(() => {
+  const handleHighlight = useCallback((color: string) => {
     if (!selectedText || !highlightManagerRef.current) return;
 
     const newHighlight = highlightManagerRef.current.addHighlight(filePath, {
       cfiRange: selectedText.cfiRange,
       text: selectedText.text,
-      color: HIGHLIGHT_COLORS.YELLOW,
+      color: color,
       note: ''
     });
 
@@ -132,7 +132,7 @@ export const EpubReader = ({
     // Apply highlight to rendition
     if (renditionRef.current) {
       renditionRef.current.annotations.add('highlight', selectedText.cfiRange, {}, () => {}, 'hl', {
-        fill: HIGHLIGHT_COLORS.YELLOW,
+        fill: color,
         'fill-opacity': '0.3',
         'mix-blend-mode': 'multiply'
       });
@@ -159,16 +159,18 @@ export const EpubReader = ({
   const handleRemoveHighlight = useCallback((highlightId: string) => {
     if (!highlightManagerRef.current) return;
 
+    const highlightToRemove = highlights.find(h => h.id === highlightId);
     highlightManagerRef.current.deleteHighlight(filePath, highlightId);
     setHighlights(prev => prev.filter(h => h.id !== highlightId));
 
-    // Note: Removing annotations from epubjs is more complex
-    // We'll need to reload the rendition or clear and reapply highlights
-    if (renditionRef.current) {
-      // For now, we'll just reload the highlights
-      renditionRef.current.annotations.remove(highlightId, 'highlight');
+    if (renditionRef.current && highlightToRemove) {
+      try {
+        renditionRef.current.annotations.remove(highlightToRemove.cfiRange, 'highlight');
+      } catch (error) {
+        console.error('Failed to remove highlight from rendition:', error);
+      }
     }
-  }, [filePath]);
+  }, [filePath, highlights]);
 
   const handleToggleContinuousMode = useCallback(() => {
     setIsContinuousHighlightMode(prev => !prev);
@@ -177,17 +179,6 @@ export const EpubReader = ({
   const handleCloseToolbar = useCallback(() => {
     setShowHighlightToolbar(false);
     setSelectedText(null);
-  }, []);
-
-  const handleKeyPress = useCallback((e?: KeyboardEvent) => {
-    // 阻止react-reader的默认键盘导航
-    // 这样键盘事件不会触发翻页
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation?.();
-    }
-    return false;
   }, []);
 
   const handleNavigateToHighlight = useCallback((cfiRange: string) => {
@@ -200,6 +191,12 @@ export const EpubReader = ({
   useEffect(() => {
     updateFontSize(fontSize);
   }, [fontSize, updateFontSize]);
+
+  useEffect(() => {
+    if (renditionRef.current) {
+      applyHighlights(renditionRef.current);
+    }
+  }, [highlights, applyHighlights]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -287,6 +284,13 @@ export const EpubReader = ({
           style={{ flex: 1, position: 'relative' }}
           tabIndex={0}
           onKeyDown={(e) => {
+            if (e.key === 'ArrowRight') {
+              renditionRef.current?.next();
+              e.preventDefault();
+            } else if (e.key === 'ArrowLeft') {
+              renditionRef.current?.prev();
+              e.preventDefault();
+            }
             // 阻止键盘事件冒泡，避免影响其他编辑器
             e.stopPropagation();
             e.nativeEvent.stopImmediatePropagation();
@@ -308,38 +312,25 @@ export const EpubReader = ({
             swipeable={false}
             url={contents}
             handleTextSelected={handleTextSelected}
-            handleKeyPress={handleKeyPress}
+            handleKeyPress={undefined}
             getRendition={(rendition: Rendition) => {
               renditionRef.current = rendition;
               
-              // 禁用epubjs的键盘导航
-              try {
-                // 方法2: 覆盖keydown事件处理
-                rendition.on('keydown', (e: KeyboardEvent) => {
-                  // 阻止所有键盘事件
+              // Handle keyboard events from within the iframe
+              rendition.on('keydown', (e: KeyboardEvent) => {
+                if (e.key === 'ArrowRight') {
+                  rendition.next();
                   e.preventDefault();
-                  e.stopPropagation();
-                  return false;
-                });
-              } catch (error) {
-                console.warn('Failed to disable keyboard navigation:', error);
-              }
+                } else if (e.key === 'ArrowLeft') {
+                  rendition.prev();
+                  e.preventDefault();
+                }
+              });
               
               // Register content hook to disable context menu
               rendition.hooks.content.register((contents: Contents) => {
                 const body = contents.window.document.body;
                 body.oncontextmenu = () => false;
-                
-                // 在文档级别阻止键盘事件
-                const doc = contents.window.document;
-                const stopKeyboardEvents = (e: KeyboardEvent) => {
-                  e.stopPropagation();
-                  e.stopImmediatePropagation();
-                };
-                
-                doc.addEventListener('keydown', stopKeyboardEvents, true);
-                doc.addEventListener('keyup', stopKeyboardEvents, true);
-                doc.addEventListener('keypress', stopKeyboardEvents, true);
               });
 
               // Apply theme and font size
@@ -349,11 +340,12 @@ export const EpubReader = ({
               // Apply existing highlights
               applyHighlights(rendition);
             }}
-            epubOptions={scrolled ? {
+            epubOptions={{
               allowPopups: true,
-              flow: "scrolled",
-              manager: "continuous",
-            } : undefined}
+              flow: scrolled ? "scrolled" : "paginated",
+              manager: scrolled ? "continuous" : "default",
+              keyboard: false
+            } as any}
             readerStyles={readerStyles}
           />
         </div>
