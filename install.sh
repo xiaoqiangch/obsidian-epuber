@@ -24,10 +24,10 @@ print_error() {
 }
 
 # 检查目标目录
-TARGET_DIR="../testBrain/.obsidian/plugins/obsidian-epub-plugin"
+TARGET_DIR="../testBrain/.obsidian/plugins/obsidian-epuber"
 SOURCE_DIR="."
 
-print_info "开始安装ePub阅读器插件到TESTBRAIN仓库..."
+print_info "开始编译并安装 Epuber 插件到 TESTBRAIN 仓库..."
 
 # 检查源目录是否存在必要的文件
 if [ ! -f "manifest.json" ]; then
@@ -35,13 +35,13 @@ if [ ! -f "manifest.json" ]; then
     exit 1
 fi
 
+# 始终执行构建
+print_info "正在执行构建 (npm run build)..."
+npm run build
+
 if [ ! -f "main.js" ]; then
-    print_warning "main.js 文件不存在，尝试构建..."
-    npm run build
-    if [ ! -f "main.js" ]; then
-        print_error "构建失败，main.js 文件不存在！"
-        exit 1
-    fi
+    print_error "构建失败，main.js 文件不存在！"
+    exit 1
 fi
 
 # 检查styles.css是否存在，如果不存在则创建空文件
@@ -86,7 +86,7 @@ if [ -f "$TARGET_DIR/manifest.json" ] && [ -f "$TARGET_DIR/main.js" ]; then
     print_info "2. 进入'社区插件'"
     print_info "3. 关闭'安全模式'"
     print_info "4. 刷新插件列表"
-    print_info "5. 找到'ePub Reader'并启用"
+    print_info "5. 找到 'obsidian-epuber' 并启用"
     
 else
     print_error "插件安装失败！"

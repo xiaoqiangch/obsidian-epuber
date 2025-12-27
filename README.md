@@ -1,4 +1,4 @@
-![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/caronchen/obsidian-epub-plugin) ![GitHub all releases](https://img.shields.io/github/downloads/caronchen/obsidian-epub-plugin/total) ![GitHub Release Date](https://img.shields.io/github/release-date/caronchen/obsidian-epub-plugin) ![GitHub last commit](https://img.shields.io/github/last-commit/caronchen/obsidian-epub-plugin)
+![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/caronchen/obsidian-epuber) ![GitHub all releases](https://img.shields.io/github/downloads/caronchen/obsidian-epuber/total) ![GitHub Release Date](https://img.shields.io/github/release-date/caronchen/obsidian-epuber) ![GitHub last commit](https://img.shields.io/github/last-commit/caronchen/obsidian-epuber)
 
 ## Obsidian ePub Reader Plugin
 
@@ -27,4 +27,4 @@ This is an ePub reader plugin for Obsidian (https://obsidian.md). Can open docum
 
 ### Manually installing the plugin
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/obsidian-epub-plugin/`.
+- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/obsidian-epuber/`.

@@ -4,7 +4,6 @@ import { WorkspaceLeaf, Plugin } from 'obsidian';
 import { ReactReader, ReactReaderStyle, type IReactReaderStyle } from 'react-reader';
 import type { Contents, Rendition } from 'epubjs';
 import useLocalStorageState from 'use-local-storage-state';
-import { HighlightToolbar } from './HighlightToolbar';
 import { HighlightPanel } from './HighlightPanel';
 import { HighlightManager } from './highlightManager';
 import { Highlight, HIGHLIGHT_COLORS } from './highlightTypes';
@@ -37,9 +36,15 @@ export const EpubReader = ({
   const [selectedText, setSelectedText] = useState<{ cfiRange: string; text: string } | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [showHighlightPanel, setShowHighlightPanel] = useState(false);
-  const [isContinuousHighlightMode, setIsContinuousHighlightMode] = useState(false);
-  const [showHighlightToolbar, setShowHighlightToolbar] = useState(false);
+  const [activeHighlightColor, setActiveHighlightColor] = useState<string | null>(null);
   const highlightManagerRef = useRef<HighlightManager | null>(null);
+  const activeColorRef = useRef<string | null>(null);
+  const lastTurnTime = useRef(0);
+  const attachedRenditionRef = useRef<Rendition | null>(null);
+
+  useEffect(() => {
+    activeColorRef.current = activeHighlightColor;
+  }, [activeHighlightColor]);
 
   const isDarkMode = document.body.classList.contains('theme-dark');
 
@@ -69,7 +74,9 @@ export const EpubReader = ({
   const applyHighlights = useCallback((rendition: Rendition) => {
     highlights.forEach(highlight => {
       try {
-        rendition.annotations.add('highlight', highlight.cfiRange, {}, () => {}, 'hl', {
+        // Use a unique class name based on the color to avoid style overriding
+        const colorClass = `hl-${highlight.color.replace('#', '')}`;
+        rendition.annotations.add('highlight', highlight.cfiRange, {}, () => {}, colorClass, {
           fill: highlight.color,
           'fill-opacity': '0.3',
           'mix-blend-mode': 'multiply'
@@ -87,65 +94,66 @@ export const EpubReader = ({
     const text = selection.toString().trim();
     if (!text) return;
 
-    setSelectedText({
-      cfiRange,
-      text
-    });
+    const currentColor = activeColorRef.current;
 
-    // Show toolbar when text is selected
-    setShowHighlightToolbar(true);
-
-    // Auto-highlight in continuous mode
-    if (isContinuousHighlightMode && highlightManagerRef.current) {
+    // Auto-highlight if a color is active
+    if (currentColor && highlightManagerRef.current) {
       const newHighlight = highlightManagerRef.current.addHighlight(filePath, {
         cfiRange,
         text,
-        color: HIGHLIGHT_COLORS.YELLOW,
+        color: currentColor,
         note: ''
       });
 
       setHighlights(prev => [...prev, newHighlight]);
 
-      // Apply highlight to rendition
+      // Apply highlight to rendition immediately
       if (renditionRef.current) {
-        renditionRef.current.annotations.add('highlight', cfiRange, {}, () => {}, 'hl', {
-          fill: HIGHLIGHT_COLORS.YELLOW,
+        const colorClass = `hl-${currentColor.replace('#', '')}`;
+        renditionRef.current.annotations.add('highlight', cfiRange, {}, () => {}, colorClass, {
+          fill: currentColor,
           'fill-opacity': '0.3',
           'mix-blend-mode': 'multiply'
         });
       }
-    }
-  }, [isContinuousHighlightMode, filePath]);
-
-  const handleHighlight = useCallback((color: string) => {
-    if (!selectedText || !highlightManagerRef.current) return;
-
-    const newHighlight = highlightManagerRef.current.addHighlight(filePath, {
-      cfiRange: selectedText.cfiRange,
-      text: selectedText.text,
-      color: color,
-      note: ''
-    });
-
-    setHighlights(prev => [...prev, newHighlight]);
-
-    // Apply highlight to rendition
-    if (renditionRef.current) {
-      renditionRef.current.annotations.add('highlight', selectedText.cfiRange, {}, () => {}, 'hl', {
-        fill: color,
-        'fill-opacity': '0.3',
-        'mix-blend-mode': 'multiply'
+      
+      // Clear browser selection
+      selection.removeAllRanges();
+      setSelectedText(null);
+    } else {
+      setSelectedText({
+        cfiRange,
+        text
       });
     }
+  }, [filePath]);
 
-    // Clear selection
-    setSelectedText(null);
-    
-    // Keep toolbar open in continuous mode
-    if (!isContinuousHighlightMode) {
-      setShowHighlightToolbar(false);
+  const handleHighlight = useCallback((color: string) => {
+    // If we have selected text, highlight it now
+    if (selectedText && highlightManagerRef.current) {
+      const newHighlight = highlightManagerRef.current.addHighlight(filePath, {
+        cfiRange: selectedText.cfiRange,
+        text: selectedText.text,
+        color: color,
+        note: ''
+      });
+
+      setHighlights(prev => [...prev, newHighlight]);
+
+      if (renditionRef.current) {
+        const colorClass = `hl-${color.replace('#', '')}`;
+        renditionRef.current.annotations.add('highlight', selectedText.cfiRange, {}, () => {}, colorClass, {
+          fill: color,
+          'fill-opacity': '0.3',
+          'mix-blend-mode': 'multiply'
+        });
+      }
+      setSelectedText(null);
     }
-  }, [selectedText, filePath, isContinuousHighlightMode]);
+    
+    // Enter continuous mode with this color
+    setActiveHighlightColor(prev => prev === color ? null : color);
+  }, [selectedText, filePath]);
 
   const handleUpdateHighlight = useCallback((highlightId: string, note: string) => {
     if (!highlightManagerRef.current) return;
@@ -172,15 +180,6 @@ export const EpubReader = ({
     }
   }, [filePath, highlights]);
 
-  const handleToggleContinuousMode = useCallback(() => {
-    setIsContinuousHighlightMode(prev => !prev);
-  }, []);
-
-  const handleCloseToolbar = useCallback(() => {
-    setShowHighlightToolbar(false);
-    setSelectedText(null);
-  }, []);
-
   const handleNavigateToHighlight = useCallback((cfiRange: string) => {
     if (renditionRef.current) {
       renditionRef.current.display(cfiRange);
@@ -191,12 +190,6 @@ export const EpubReader = ({
   useEffect(() => {
     updateFontSize(fontSize);
   }, [fontSize, updateFontSize]);
-
-  useEffect(() => {
-    if (renditionRef.current) {
-      applyHighlights(renditionRef.current);
-    }
-  }, [highlights, applyHighlights]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -217,10 +210,18 @@ export const EpubReader = ({
   const readerStyles = isDarkMode ? darkReaderTheme : lightReaderTheme;
 
   return (
-    <div style={{ height: "100vh", position: 'relative', display: 'flex' }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <label htmlFor="fontSizeSlider" style={{ whiteSpace: 'nowrap' }}>Font Size: </label>
+    <div style={{ height: "100%", position: 'relative', display: 'flex', overflow: 'hidden', backgroundColor: 'var(--background-primary)' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{ 
+          padding: '10px', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '10px', 
+          borderBottom: '1px solid var(--background-modifier-border)',
+          backgroundColor: 'var(--background-primary)',
+          zIndex: 10
+        }}>
+          <label htmlFor="fontSizeSlider" style={{ whiteSpace: 'nowrap', fontSize: '12px' }}>Size: </label>
           <input
             id="fontSizeSlider"
             type="range"
@@ -228,8 +229,39 @@ export const EpubReader = ({
             max="160"
             value={fontSize}
             onChange={e => setFontSize(parseInt(e.target.value))}
-            style={{ flex: 1 }}
+            style={{ width: '80px' }}
           />
+          
+          <div style={{ display: 'flex', gap: '6px', marginLeft: '10px', padding: '0 10px', borderLeft: '1px solid var(--background-modifier-border)', borderRight: '1px solid var(--background-modifier-border)' }}>
+            {Object.entries(HIGHLIGHT_COLORS).map(([name, color]) => (
+              <button
+                key={name}
+                onClick={() => handleHighlight(color)}
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  backgroundColor: color,
+                  border: activeHighlightColor === color ? '2px solid var(--interactive-accent)' : '1px solid var(--background-modifier-border)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  boxSizing: 'border-box',
+                  boxShadow: activeHighlightColor === color ? '0 0 4px var(--interactive-accent)' : 'none'
+                }}
+                title={activeHighlightColor === color ? `Stop ${name} mode` : `Start ${name} mode`}
+              />
+            ))}
+            {activeHighlightColor && (
+              <button 
+                onClick={() => setActiveHighlightColor(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', padding: '0 4px', color: 'var(--text-muted)' }}
+                title="Clear active color"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
           <button
             onClick={() => setShowHighlightPanel(!showHighlightPanel)}
             style={{
@@ -245,7 +277,8 @@ export const EpubReader = ({
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: '16px',
-              position: 'relative'
+              position: 'relative',
+              marginLeft: 'auto'
             }}
             title={showHighlightPanel ? "Hide highlights panel" : `Show highlights (${highlights.length})`}
           >
@@ -271,15 +304,6 @@ export const EpubReader = ({
           </button>
         </div>
         
-        {showHighlightToolbar && (
-          <HighlightToolbar
-            onHighlight={handleHighlight}
-            onClose={handleCloseToolbar}
-            isContinuousMode={isContinuousHighlightMode}
-            onToggleContinuousMode={handleToggleContinuousMode}
-          />
-        )}
-
         <div
           style={{ flex: 1, position: 'relative' }}
           tabIndex={0}
@@ -295,14 +319,6 @@ export const EpubReader = ({
             e.stopPropagation();
             e.nativeEvent.stopImmediatePropagation();
           }}
-          onKeyUp={(e) => {
-            e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
-          }}
-          onKeyPress={(e) => {
-            e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
-          }}
         >
           <ReactReader
             title={title}
@@ -314,21 +330,32 @@ export const EpubReader = ({
             handleTextSelected={handleTextSelected}
             handleKeyPress={undefined}
             getRendition={(rendition: Rendition) => {
-              // Proxy next/prev to check for focus
+              if (attachedRenditionRef.current === rendition) return;
+              attachedRenditionRef.current = rendition;
+              
+              // Proxy next/prev to check for focus and add debounce
               const originalNext = rendition.next.bind(rendition);
               const originalPrev = rendition.prev.bind(rendition);
               
               rendition.next = () => {
+                const now = Date.now();
+                if (now - lastTurnTime.current < 300) return Promise.resolve(null as any);
+                
                 const isFocused = leaf.view.containerEl.contains(document.activeElement);
                 if (isFocused) {
+                  lastTurnTime.current = now;
                   return originalNext();
                 }
                 return Promise.resolve(null as any);
               };
               
               rendition.prev = () => {
+                const now = Date.now();
+                if (now - lastTurnTime.current < 300) return Promise.resolve(null as any);
+                
                 const isFocused = leaf.view.containerEl.contains(document.activeElement);
                 if (isFocused) {
+                  lastTurnTime.current = now;
                   return originalPrev();
                 }
                 return Promise.resolve(null as any);
@@ -341,9 +368,11 @@ export const EpubReader = ({
                 if (e.key === 'ArrowRight') {
                   rendition.next();
                   e.preventDefault();
+                  e.stopPropagation();
                 } else if (e.key === 'ArrowLeft') {
                   rendition.prev();
                   e.preventDefault();
+                  e.stopPropagation();
                 }
               });
               
@@ -359,6 +388,11 @@ export const EpubReader = ({
 
               // Apply existing highlights
               applyHighlights(rendition);
+
+              // Re-apply highlights when a new section is rendered
+              rendition.on('rendered', () => {
+                applyHighlights(rendition);
+              });
             }}
             epubOptions={{
               allowPopups: true,
